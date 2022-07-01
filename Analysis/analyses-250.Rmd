@@ -1,0 +1,631 @@
+---
+title: "First interim analysis for SII Study 2"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+# load packages
+library(effsize) # effsize_0.8.1
+library(tidyverse) # tidyverse_1.3.1
+library(ggpubr) # ggpubr_0.4.0
+library(broom) # broom_0.7.12
+library(here) # here_1.0.1
+library(apaTables)
+library(lmerTest)
+library(rstatix)
+
+# Read data
+#d_long <- readRDS(here::here("Processed data/d-long.rds"))
+d_long <- readRDS(here::here("Processed data/d-long-250.rds"))
+
+# Prepare data
+dems <- d_long %>%
+    select(subject_id, age, gender, starts_with("pol_")) %>%
+    unique()
+rt <- d_long %>%
+    filter(is_correct == 1) %>%
+    select(
+        subject_id, probe_type, reason_type,
+        item_order, starts_with("rt_")) %>%
+    mutate(
+        item_order = recode(item_order,
+            "br" = "behavior first", "rb" = "reason first"),
+        probe_type = recode(probe_type,
+            "im" = "implied", "io" = "implied other"),
+        reason_type = recode(reason_type,
+            "suff" = "sufficient", "ctrl" = "control"))
+
+# Formatting functions
+format_p <- function(p, num_only = FALSE) {
+    if (num_only == FALSE) {
+        formatted_p <- ifelse(
+            p < 0.001,
+            "p < .001",
+            paste("p =", sub("0.", ".", round(p, 3))))
+    }
+    if (num_only == TRUE) {
+        formatted_p <- ifelse(
+            p < 0.001,
+            "<.001",
+            sub("0.", ".", round(p, 3)))
+    }
+    return(formatted_p)
+}
+format_apa <- function(number, leading_zero = TRUE) {
+   if (number >= 100) {
+        out <- round(number, 0)
+   } else if (number >= 10 & number < 100) {
+        out <- round(number, 1)
+   } else if (number >= 0.1 & number < 10) {
+        out <- round(number, 2)
+   } else if (number >= 0.001 & number < 0.1) {
+        out <- round(number, 3)
+   } else if (number < 0.001) {
+        round_digits <- stringr::str_locate(format(number, scientific = FALSE), "[1-9]{1}")[1]-2 # nolint
+        out <- round(number, round_digits)
+   }
+   if (out < 1 & leading_zero == FALSE) {
+      out <- sub("0.", ".", format(out, scientific = FALSE))
+   }
+   return(out)
+}
+cor_table <- function(data, method = c("pearson", "spearman"), tri = c(FALSE, TRUE), result = c("none", "html", "latex")) { # nolint
+    # Compute correlation matrix
+    require(Hmisc)
+    data <- as.matrix(data)
+    correlation_matrix <- Hmisc::rcorr(data, type = method[1])
+    r_mat <- correlation_matrix$r # Matrix of correlation coeficients
+    p_mat <- correlation_matrix$P # Matrix of p-value
+    # Define notions for significance levels; spacing is important.
+    mystars <- ifelse(p_mat < .0001, "****", ifelse(p_mat < .001, "*** ", ifelse(p_mat < .01, "**  ", ifelse(p_mat < .05, "*   ", "    ")))) # nolint
+    # Trunctuate the correlation matrix to two decimal
+    r_mat <- format(round(cbind(rep(-1.11, ncol(data)), r_mat), 2))[, -1]
+    # Build a new matrix with their appropriate stars
+    r_mat_new <- matrix(paste(r_mat, mystars, sep = ""), ncol = ncol(data))
+    diag(r_mat_new) <- paste(diag(r_mat), " ", sep = "")
+    rownames(r_mat_new) <- colnames(data)
+    colnames(r_mat_new) <- paste(colnames(data), "", sep = "")
+    # remove upper triangle of correlation matrix
+    if (tri[1] == FALSE) {
+      r_mat_new <- as.matrix(r_mat_new)
+      r_mat_new[upper.tri(r_mat_new, diag = TRUE)] <- ""
+      r_mat_new <- as.data.frame(r_mat_new)
+    }
+    # Remove last column and return the correlation matrix
+    r_mat_new <- cbind(r_mat_new[seq(length(r_mat_new) - 1)])
+    if (result[1] == "none") {
+        return(r_mat_new)
+    } else {
+        print(xtable::xtable(r_mat_new), type = result[1])
+    }
+}
+```
+
+### Introduction
+Research on person perception has revealed that people tend to attribute others’ behavior to stable person characteristics, even if it can just as well be explained by reasons such as situational factors or mental states. This tendency is known as the correspondence bias (Gilbert & Malone, 1995) and may play an important role in the domain of political polarization. Specifically, people may attribute each other’s politically relevant behaviors to stable ideological dispositions (such as leftist, conservative, racist, or feminist), while neglecting potential other causes and thereby impeding mutual understanding. To investigate the role of the correspondence bias in political polarization, we examine whether spontaneous ideological inferences are reduced when behaviors are accompanied by information on relatively sufficient reasons for the behavior. We thus extend previous research on spontaneous trait inferences (STI, Winter & Uleman, 1984) and the correspondence bias to spontaneous inferences of ideological dispositions.
+
+### Sample Characteristics
+For the first interim analysis we collected data from a total of N = 250 participants. Following our pre-registered exclusion criteria, we excluded 5 participants whose average correct response times were slower than two standard deviations over the sample mean, 1 who rated their own data to be unfit for analysis, and 1 who did not give informed consent. This resulted in a sample of N = `r nrow(dems)` participants (`r nrow(filter(dems, gender == "female"))` female, `r nrow(filter(dems, gender == "male"))` male, `r nrow(filter(dems, gender == "other"))` other, `r nrow(filter(dems, gender %in% c("not specified","")))` not specified; average age M = `r round(mean(dems$age, na.rm = TRUE), 1)` years, SD = `r round(sd(dems$age, na.rm = TRUE), 1)`, ranging from `r min(dems$age, na.rm = TRUE)` to `r max(dems$age, na.rm = TRUE)`). Participants were recruited via the online platform Prolific (www.prolific.co) and received monetary compensation of 4.50 GBP for completing the 30-minute study. An additional XX people started the experiment on prolific but either returned their submission, timed-out, or only partially completed the experiment due to technical issues.
+
+On average, participants reported to be rather left leaning (M = `r round(mean(dems$pol_orientation), 1)`, SD = `r round(sd(dems$pol_orientation), 1)` on a scale from 1 = left to 10 = right), rather interested in politics (M = `r round(mean(dems$pol_interest), 1)`, SD = `r round(sd(dems$pol_interest), 1)`, on a scale ranging from 1 = not at all to 10 = very strongly), and moderately satisfied with the German political system (M = `r round(mean(dems$pol_satisfaction), 1)`, SD = `r round(sd(dems$pol_satisfaction), 1)`, on a scale ranging from 1 = satisfied to 4 = dissatisfied).
+
+### Preregistered hypothesis {.tabset}
+```{r hypothesis}
+# Aggregate data
+rt_long_2f <- rt %>%
+    select(-item_order) %>%
+    group_by(subject_id, probe_type, reason_type) %>%
+    summarize(across(everything(), mean, na.rm = TRUE)) %>%
+    ungroup()
+# Find extreme outliers
+rt_long_2f <- rt_long_2f %>%
+    group_by(probe_type, reason_type) %>%
+    mutate(is_extreme = is_extreme(rt_M2SD_log)) %>%
+    ungroup()
+# Anova
+m1 <- anova_test(
+    data = filter(rt_long_2f, is_extreme == FALSE),
+    dv = rt_M2SD_log, wid = subject_id, effect.size = "pes",
+    within = c(probe_type, reason_type)
+)
+```
+
+To prepare the response latency data for our main anlysis we applied an individual cut-off of the individual mean plus two standard deviations for slow responses and the log-transformation and then computed the average for each cell of the design. We looked for extreme outliers in each cell of the design. We defined them as values above Q3 + 3 * IQR or below Q1 - 3 * IQR. We found and excluded `r sum(rt_long_2f$is_extreme==TRUE)` extreme outliers. Upon visual inspection the distributions in the different conditions did not seem severely non-normal. We therefore performed our analyses with the untransformed mean response latencies. A two-way repeated-measures ANOVA was performed to evaluate the effect of probe type and reason type on the mean response latencies.
+
+The main effect for probe type was significant at the pre-registered alpha boundary of \alpha = .0002, F(`r m1$DFn[1]`, `r m1$DFd[1]`) = `r m1$F[1]`, `r format_p(m1$p[1])`, $\eta_{p}^{2}$ = `r format_apa(m1$pes[1], leading_zero = FALSE)`. There was no significant interaction between probe type and reason type, F(`r m1$DFn[3]`, `r m1$DFd[3]`) = `r m1$F[3]`, `r format_p(m1$p[3])`, $\eta_{p}^{2}$ = `r format_apa(m1$pes[3], leading_zero = FALSE)`.
+
+#### Outlier detection 2f
+```{r plotting outliers 2f, warning = FALSE}
+filter(rt_long_2f, is_extreme == FALSE) %>%
+    ggplot(aes(reason_type, rt_M2SD_none, fill = probe_type)) +
+    geom_boxplot() +
+    labs(x = "Reason type", y = "Mean response latency in seconds", fill = "Probe type") + # nolint
+    scale_fill_manual(values = c("#a5a5a5", "#ffffff")) +
+    theme_bw(base_size = 16) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + # nolint
+    geom_point(
+        # Replace all non-outlier values by NA
+        data = mutate(rt_long_2f, rt_M2SD_none = replace(rt_M2SD_none, is_extreme == FALSE, NA)), # nolint
+        position = position_dodge(width = 0.75), shape = 4,
+        size = 4, show.legend = FALSE)
+```
+
+#### QQ-Plot
+```{r checking normality 2f}
+# Visual inspection of normality
+# Data appears moderately non-normal
+ggqqplot(rt_long_2f,
+    "rt_M2SD_log", ggtheme = theme_bw()) +
+    facet_grid(probe_type ~ reason_type, labeller = "label_value")
+```
+
+#### ANOVA
+```{r ANOVA 2f}
+knitr::kable(m1, format = "markdown")
+```
+
+#### Descriptives
+```{r descriptives 2f}
+rt_long_2f %>%
+    group_by(probe_type, reason_type) %>%
+    get_summary_stats(rt_M2SD_none, type = "mean_sd") %>%
+    knitr::kable(format = "markdown")
+```
+
+#### Visualization
+```{r plotting results 2f}
+rt_long_2f %>%
+    ggplot() +
+    aes(reason_type, rt_M2SD_none, color = probe_type, group = probe_type) +
+    labs(x = "Reason type", y = "Mean response latency in seconds", color = "Probe type") + # nolint
+    scale_color_manual(values = c("#a5a5a5", "#000000")) +
+    stat_summary(fun = mean, geom = "point") +
+    stat_summary(fun = mean, geom = "line") +
+    theme_bw(base_size = 16) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) # nolint
+```
+
+#### Post-hoc tests
+```{r post-hoc tests 2f}
+p1 <- rt_long_2f %>%
+  group_by(reason_type) %>%
+  pairwise_t_test(
+    rt_M2SD_log ~ probe_type, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+knitr::kable(p1, format = "markdown")
+```
+
+#### Multiverse analysis
+Because there are no conventions regarding outlier correction and transformations, we follow a recommendation by Krieglmeyer & Deutsch (2010) and employ a multiverse analysis using different cut-off criteria (no cut-off, 2500 ms, 2000 ms, and 1500 ms) and transformations (no transformation, a log-transformation, and an inverse transformation) and report each combination’s effects on the results.
+
+```{r multiverse h1}
+# Select all variables containing reaction time means
+rt_multi <- rt_long_2f %>%
+    select(subject_id, probe_type, reason_type, starts_with("rt")) %>%
+    pivot_longer(
+        cols = starts_with("rt"),
+        names_to = c(NA, "cutoff", "trans"),
+        values_to = "rt",
+        names_sep = "_")
+# Loop over all combinations of cutoffs and transformations
+multi <- multi_h1 <- multi_h2 <- data.frame(
+    cutoff = rep(c("none", "M2SD", "f25", "f20", "f15"), 3),
+    transformation = c(rep("none", 5), rep("log", 5), rep("inv", 5)))
+for (c in seq(nrow(multi))) {
+    # Filter data using c-th cutoff and transformation
+    rt_multi_c <- rt_multi %>%
+        filter(cutoff == multi$cutoff[c] & trans == multi$transformation[c])
+    # Calculate test and effect size
+    mv1 <- anova_test(
+        data = rt_multi_c,
+        dv = rt, wid = subject_id, effect.size = "pes",
+        within = c(probe_type, reason_type)
+    )
+    # Save test statistics for h1
+    multi_h1$DFn[c] <- mv1$DFn[1]
+    multi_h1$DFd[c] <- mv1$DFc[1]
+    multi_h1$F[c] <- mv1$F[1]
+    multi_h1$p[c] <- format_p(mv1$p[1], num_only = TRUE)
+    multi_h1$pes[c] <- format_apa(mv1$pes[1], leading_zero = FALSE)
+
+    # Save test statistics for h2
+    multi_h2$DFn[c] <- mv1$DFn[3]
+    multi_h2$DFd[c] <- mv1$DFc[3]
+    multi_h2$F[c] <- mv1$F[3]
+    multi_h2$p[c] <- format_p(mv1$p[3], num_only = TRUE)
+    multi_h2$pes[c] <- format_apa(mv1$pes[3], leading_zero = FALSE)
+}
+# Print multiverse table
+knitr::kable(multi_h1, format = "markdown")
+knitr::kable(multi_h2, format = "markdown")
+# Save multiverse table as csv
+# write.csv(multi_h1, here::here("Analysis/multiverse_h2.csv"))
+```
+
+### Exploratory error rate analysis {.tabset}
+```{r error rate analysis 2f, message = FALSE}
+# Prepare data
+er_long_2f <- rt %>%
+    group_by(subject_id, probe_type, reason_type) %>%
+    summarize(correct_responses = n()) %>%
+    mutate(er = (12 - correct_responses) / 12) %>%
+    select(-correct_responses)
+# Identify outliers
+er_long_2f <- er_long_2f %>%
+    group_by(probe_type, reason_type) %>%
+    mutate(is_extreme = is_extreme(er)) %>%
+    ungroup()
+# Anova
+er_m1 <- anova_test(
+    data = filter(er_long_2f, is_extreme == FALSE),
+    dv = er, wid = subject_id, effect.size = "pes",
+    within = c(probe_type, reason_type)
+)
+```
+We looked for extreme outliers in each cell of the design. We defined them as values above Q3 + 3 * IQR or below Q1 - 3 * IQR. We found and excluded `r sum(er_long_2f$is_extreme==TRUE)` extreme outliers. Upon visual inspection the differences between the implied and implied-other conditions seemed severely non-normal. Nevertheless, a two-way repeated-measures ANOVA was performed to evaluate the effect of probe type and reason type on the transformed mean response latencies.
+
+The main effect for probe type was significant, F(`r er_m1$DFn[1]`, `r er_m1$DFd[1]`) = `r er_m1$F[1]`, `r format_p(er_m1$p[1])`, $\eta_{p}^{2}$ = `r format_apa(er_m1$pes[1], leading_zero = FALSE)`. There was no significant interaction between probe type and reason type, F(`r er_m1$DFn[3]`, `r er_m1$DFd[3]`) = `r er_m1$F[3]`, `r format_p(er_m1$p[3])`, $\eta_{p}^{2}$ = `r format_apa(er_m1$pes[3], leading_zero = FALSE)`.
+
+#### Outlier detection 2f
+```{r er plotting outliers 2f, warning = FALSE}
+filter(er_long_2f, is_extreme == FALSE) %>%
+    ggplot(aes(reason_type, er, fill = probe_type)) +
+    geom_boxplot(aes(fill = probe_type)) +
+    labs(x = "Reason type", y = "Error rate", fill = "Probe type") + # nolint
+    scale_fill_manual(values = c("#a5a5a5", "#ffffff")) +
+    theme_bw(base_size = 16) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + # nolint
+    geom_point(
+        # Replace all non-outlier values by NA
+        data = mutate(er_long_2f, er = replace(er, is_extreme == FALSE, NA)), # nolint
+        position = position_jitterdodge(0.5, 0.01, 0.75, 3),
+        shape = 4, size = 4, show.legend = FALSE)
+```
+
+#### QQ-Plot
+```{r er checking normality 2f}
+# Visual inspection of normality
+# Data appears moderately non-normal
+ggqqplot(er_long_2f,
+    "er", ggtheme = theme_bw()) +
+    facet_grid(probe_type ~ reason_type, labeller = "label_value")
+```
+
+#### ANOVA
+```{r er ANOVA 2f}
+knitr::kable(er_m1, format = "markdown")
+```
+
+#### Descriptives
+```{r er descriptives 2f}
+er_long_2f %>%
+    group_by(probe_type, reason_type) %>%
+    get_summary_stats(er, type = "mean_sd") %>%
+    knitr::kable(format = "markdown")
+```
+
+#### Visualization
+```{r er plotting results 2f}
+er_long_2f %>%
+    ggplot() +
+    aes(reason_type, er, color = probe_type, group = probe_type) +
+    labs(x = "Reason type", y = "Error rate", color = "Probe type") +
+    scale_color_manual(values = c("#a5a5a5", "#000000")) +
+    stat_summary(fun = mean, geom = "point") +
+    stat_summary(fun = mean, geom = "line") +
+    theme_bw(base_size = 16) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) # nolint
+```
+
+#### Post-hoc tests
+```{r er post-hoc tests 2f}
+er_p1 <- er_long_2f %>%
+  group_by(reason_type) %>%
+  pairwise_t_test(
+    er ~ probe_type, paired = TRUE,
+    p.adjust.method = "bonferroni"
+    )
+knitr::kable(er_p1, format = "markdown")
+```
+
+### Exploratory analysis of order of presentation {.tabset}
+```{r order of presentation}
+# Aggregate data and remove means with low n
+rt_long_3f <- rt %>%
+    group_by(subject_id, probe_type, reason_type, item_order) %>%
+    summarize(across(everything(), list(mean = mean, n = ~ sum(!is.na(.x))), na.rm = TRUE)) %>% # nolint
+    ungroup()
+dropped <- nrow(rt_long_3f)
+rt_long_3f <- rt_long_3f %>%
+    filter(rt_M2SD_log_n >= 4) %>%
+    select(-matches("_n$")) %>%
+    rename_with(~str_remove(., "_mean"))
+dropped <- dropped - nrow(rt_long_3f)
+# Find extreme outliers
+rt_long_3f <- rt_long_3f %>%
+    group_by(probe_type, reason_type, item_order) %>%
+    mutate(is_extreme = is_extreme(rt_M2SD_log)) %>%
+    ungroup()
+# Run ANOVA
+m2 <- anova_test(
+    data = filter(rt_long_3f, is_extreme == FALSE),
+    dv = rt_M2SD_log, wid = subject_id, effect.size = "pes",
+    within = c(probe_type, reason_type, item_order)
+)
+```
+The order of presentation of the behaviors and reasons was randomized for each participant, with half of the items beginning with the behavior and the other half beginning with the reason. We ran analyses to test whether the interaction between probe type and reason type might only be found when the reason is presented first. We excluded `r sum(rt_long_3f$is_extreme==TRUE)` extreme outliers and `r dropped` means that were made up of less than four response latencies. Upon visual inspection the distributions of the mean response latencies in the different conditions did not seem severely non-normal. We therefore performed a three-way repeated-measures ANOVA to evaluate the effect of probe type, reason type, and order of presentation on the mean response latencies.
+
+The main effect for probe type was significant, F(`r m2$DFn[1]`, `r m2$DFd[1]`) = `r m2$F[1]`, `r format_p(m2$p[1])`, $\eta_{p}^{2}$ = `r format_apa(m2$pes[1], leading_zero = FALSE)`. There was no significant interaction between probe type and reason type, F(`r m2$DFn[3]`, `r m2$DFd[3]`) = `r m2$F[3]`, `r format_p(m2$p[3])`, $\eta_{p}^{2}$ = `r format_apa(m2$pes[3], leading_zero = FALSE)`. However, the three-way interaction was significant, F(`r m2$DFn[7]`, `r m2$DFd[7]`) = `r m2$F[7]`, `r format_p(m2$p[7])`, $\eta_{p}^{2}$ = `r format_apa(m2$pes[7], leading_zero = FALSE)`.
+
+#### Outlier detection 3f
+```{r plotting outliers 3f, warning = FALSE}
+filter(rt_long_3f, is_extreme == FALSE) %>%
+    ggplot(aes(reason_type, rt_M2SD_none, fill = probe_type)) + # nolint
+    geom_boxplot() +
+    facet_wrap(. ~ item_order, labeller = "label_value") +
+    labs(x = "Reason type", y = "Mean response latency in seconds", group = "Probe type") + # nolint
+    scale_fill_manual(values = c("#a5a5a5", "#ffffff")) +
+    theme_bw(base_size = 16) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + # nolint
+    geom_point(
+        # Replace all non-outlier values by NA
+        data = mutate(rt_long_3f, rt_M2SD_none = replace(rt_M2SD_none, is_extreme == FALSE, NA)), # nolint
+        position = position_dodge(width = 0.75), shape = 4,
+        size = 4, show.legend = FALSE)
+```
+
+#### QQ-Plot
+```{r checking normality 3f}
+# Visual inspection of normality
+# Data appears slightly non-normal
+ggqqplot(filter(rt_long_3f, is_extreme == FALSE),
+    "rt_M2SD_log", ggtheme = theme_bw()) +
+    facet_grid(probe_type ~ reason_type ~ item_order, labeller = "label_value")
+```
+
+#### ANOVA
+```{r ANOVA 3f}
+knitr::kable(m2, format = "markdown")
+```
+
+#### Descriptives
+```{r descriptives 3f}
+rt_long_3f %>%
+    group_by(item_order, reason_type, probe_type) %>%
+    get_summary_stats(rt_M2SD_none, type = "mean_sd") %>%
+    knitr::kable(format = "markdown")
+rt_long_3f %>%
+    group_by(reason_type, item_order, probe_type) %>%
+    get_summary_stats(rt_M2SD_none, type = "mean_sd") %>%
+    knitr::kable(format = "markdown")
+```
+
+#### Visualization
+```{r plotting results 3f}
+rt_long_3f %>%
+    ggplot(aes(reason_type, rt_M2SD_none, color = probe_type, group = probe_type)) + # nolint
+    facet_wrap(. ~ item_order, labeller = "label_value") +
+    labs(x = "Reason type", y = "Mean response latency in seconds", color = "Probe type") + # nolint
+    scale_color_manual(values = c("#a5a5a5", "#000000")) + # nolint
+    stat_summary(fun = mean, geom = "point") +
+    stat_summary(fun = mean, geom = "line") +
+    theme_bw(base_size = 16) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) # nolint
+rt_long_3f %>%
+    ggplot(aes(item_order, rt_M2SD_none, color = probe_type, group = probe_type)) + # nolint
+    facet_wrap(. ~ reason_type, labeller = "label_value") +
+    labs(x = "Item order", y = "Mean response latency in seconds", color = "Probe type") + # nolint
+    scale_color_manual(values = c("#a5a5a5", "#000000")) + # nolint
+    stat_summary(fun = mean, geom = "point") +
+    stat_summary(fun = mean, geom = "line") +
+    theme_bw(base_size = 14) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) # nolint
+
+```
+
+#### Post-hoc tests
+```{r post-hoc tests 3f}
+rt_p2_by_item_order <- rt_long_3f %>%
+    filter(is_extreme == FALSE) %>%
+    group_by(item_order) %>%
+    anova_test(
+        dv = rt_M2SD_log, wid = subject_id, effect.size = "pes",
+        within = c(probe_type, reason_type))
+rt_p2_by_reason_type <- rt_long_3f %>%
+    filter(is_extreme == FALSE) %>%
+    group_by(reason_type) %>%
+    anova_test(
+        dv = rt_M2SD_log, wid = subject_id, effect.size = "pes",
+        within = c(probe_type, item_order))
+
+knitr::kable(rt_p2_by_item_order, format = "markdown")
+knitr::kable(rt_p2_by_reason_type, format = "markdown")
+```
+
+### Exploratory by-item analyses {.tabset}
+We conducted exploratory by-item analyses. We calculated a discounting score for each item (SII-effect for sufficient reason minus SII-effect for control reason), with negative values indicating stronger discounting effects. The discounting effect was not significantly correlated with any of the ratings (identification with the label, necessity or baserate of the label, difference between sufficiency of reason and control reason).
+
+#### Correlation matrix
+```{r by-item analyses, message = FALSE}
+# Calculate discounting effect for each item and
+# predict by identity, necessity, baserate and sufficiency
+item_rate <- d_long %>%
+    select(
+        item_id,
+        identity = rating_identity,
+        necessity = rating_necessity,
+        baserate = rating_baserate) %>%
+    group_by(item_id) %>%
+    summarize(across(c(identity, necessity, baserate), ~mean(.x, na.rm = TRUE))) %>% # nolint
+    ungroup()
+item_suff <- d_long %>%
+    select(item_id, reason_type, rating_sufficiency) %>%
+    group_by(item_id, reason_type) %>%
+    summarize(across(rating_sufficiency, ~mean(.x, na.rm = TRUE))) %>%
+    ungroup() %>%
+    pivot_wider(
+        names_from = reason_type,
+        values_from = rating_sufficiency,
+        names_sep = "_") %>%
+    mutate(sufficiency = suff - ctrl) %>%
+    select(item_id, sufficiency)
+item <- d_long %>%
+    filter(is_correct == 1) %>%
+    select(item_id, behavior, probe_type, reason_type, rt_M2SD_log, rt_M2SD_none) %>% # nolint
+    group_by(item_id, behavior, probe_type, reason_type) %>%
+    summarize(across(matches("rt_"), ~mean(.x, na.rm = TRUE))) %>%
+    ungroup() %>%
+    pivot_wider(
+        names_from = c(probe_type, reason_type),
+        values_from = c(matches("rt_")),
+        names_sep = "_") %>%
+    # Negative Discounting values indicate reduced SII-effects
+    # if sufficient compared to control reasons were provided
+    mutate(
+        sii_suff_M2SD_log = rt_M2SD_log_im_suff - rt_M2SD_log_io_suff,
+        sii_suff_M2SD_none = rt_M2SD_none_im_suff - rt_M2SD_none_io_suff,
+        sii_ctrl_M2SD_log = rt_M2SD_log_im_ctrl - rt_M2SD_log_io_ctrl,
+        sii_ctrl_M2SD_none = rt_M2SD_none_im_ctrl - rt_M2SD_none_io_ctrl) %>%
+    mutate(
+        disc_M2SD_log = sii_suff_M2SD_log - sii_ctrl_M2SD_log,
+        disc_M2SD_none = sii_suff_M2SD_none - sii_ctrl_M2SD_none) %>%
+    select(-starts_with("rt_")) %>%
+    left_join(item_rate) %>%
+    left_join(item_suff)
+
+c1 <- cor_table(select(item, disc_M2SD_log, identity, necessity, baserate, sufficiency)) # nolint
+knitr::kable(c1, format = "markdown")
+```
+
+#### Scatter plot
+```{r by-id scatter plot}
+ggscatter(
+    item,
+    "sii_suff_M2SD_none",
+    "sii_ctrl_M2SD_none",
+    label = "item_id",
+    xlab = "SII-effect for sufficient reasons",
+    ylab = "SII-effect for control reasons") +
+    geom_abline(intercept = 0, slope = 1)
+```
+
+### Exploratory moderation analyses {.tabset}
+```{r moderation analyses, message = FALSE}
+# By using multilevel models
+d_mlm <- d_long %>%
+    # Set RTs of incorrect responses to NA
+    mutate(across(starts_with("rt_"), ~ifelse(is_correct == 0, NA, .))) %>%
+    select(
+        subject_id, item_id, probe_type, reason_type,
+        rt_M2SD_none, starts_with("rating_"),
+        age, gender, starts_with("pol_")) %>%
+    pivot_wider(
+        names_from = probe_type,
+        values_from = c(matches("rt_|rating")),
+        names_sep = "_") %>%
+    mutate(
+        rt_diff = rt_M2SD_none_im - rt_M2SD_none_io,
+        gender = na_if(gender, "other"),
+        # Grand mean center level 2 predictors
+        age = age - mean(age),
+        pol_orientation = pol_orientation - mean(pol_orientation),
+        pol_interest = pol_interest - mean(pol_interest),
+        pol_satisfaction = pol_satisfaction - mean(pol_satisfaction)
+    ) %>%
+    group_by(subject_id) %>%
+    mutate(
+        # Group mean center level 1 predictors
+        identity = rating_identity_im - mean(rating_identity_im),
+        necessity = rating_necessity_im - mean(rating_necessity_im),
+        baserate = rating_baserate_im - mean(rating_baserate_im),
+        sufficiency = rating_sufficiency_im - mean(rating_sufficiency_im),
+    ) %>%
+    ungroup() %>%
+    select(-matches("rating_|rt_M2SD"))
+
+# Intercept only model to check whether multilevel analysis is necessary
+lm1 <- lm(rt_diff ~ 1, data = d_mlm)
+mlm1 <- lmerTest::lmer(rt_diff ~ 1 + (1 | subject_id), data = d_mlm)
+mlm1_var <- as.data.frame(VarCorr(mlm1))
+mlm1_compare <- anova(mlm1, lm1)
+# Get values for reporting
+mlm1_compare_p <- ifelse(mlm1_compare[2, "Pr(>Chisq)"] < 0.001, "p < .001",
+    paste("p =", sub("0.", ".", round(mlm1_compare[2, "Pr(>Chisq)"], 3))))
+mlm1_delta_r2 <- round(mlm1_var$vcov[1] / sum(mlm1_var$vcov) * 100, 2)
+
+# Run multilevel model with ratings
+mlm2 <- lmerTest::lmer(rt_diff ~ identity + necessity + sufficiency + baserate +
+                       (1 | subject_id), data = d_mlm)
+mlm2_var <- as.data.frame(VarCorr(mlm2))
+# Calculate increases in R-squared
+mlm2_delta_r2_lvl1 <- round((mlm1_var[2, 4] - mlm2_var[2, 4]) / mlm1_var[2, 4] * 100, 2) # nolint
+mlm2_delta_r2_lvl2 <- round((mlm1_var[1, 4] - mlm2_var[1, 4]) / mlm1_var[1, 4] * 100, 2) # nolint
+# Compare model fit
+# anova(mlm2, mlm1)
+# Calculate effect size for identity rating
+coef <- summary(mlm2)$coefficients
+coef_identity <- abs(round(coef[rownames(coef) == "identity", "Estimate"] * 1000, 2)) # nolint
+coef_necessity <- abs(round(coef[rownames(coef) == "necessity", "Estimate"] * 1000, 2)) # nolint
+coef_baserate <- abs(round(coef[rownames(coef) == "baserate", "Estimate"] * 1000, 2)) # nolint
+
+# Run multilevel model with level 2 predictors
+mlm3 <- lmerTest::lmer(rt_diff ~ identity + necessity + sufficiency + baserate +
+                       pol_orientation + pol_interest + pol_satisfaction +
+                       (1 | subject_id), data = d_mlm)
+mlm3_var <- as.data.frame(VarCorr(mlm3))
+# Calculate increases in R-squared
+mlm3_delta_r2_lvl2 <- round((mlm2_var[1, 4] - mlm3_var[1, 4]) / mlm2_var[1, 4] * 100, 2) # nolint
+# Compare model fit
+# anova(mlm3, mlm2)
+```
+We performed exploratory moderation analyses to investigate whether the ratings regarding the baserate and necessity of the labels as well as the identification with the labels and the sufficiency of the reasons could explain the strength of the SII-effect. We used a difference score (implied minus implied other) of the reaction times (using an individual mean plus two standard deviations cut-off for slow responses and no transformation) as the dependent variable. To test whether a multilevel modelling approach was necessary we built an intercept only model and tested whether a random effect for the participants significantly increased the model fit. The random intercept model fit the data significantly better, $\chi^2$(`r mlm1_compare$Df[2]`, `r mlm1_compare$npar[1]`) = `r round(mlm1_compare$Chisq[2], 2)`, `r mlm1_compare_p` (even though the variance explained by the random effect was only `r mlm1_delta_r2` %). We thus fitted a multilevel model. The data was assigned to two levels – the reaction time difference level (level 1) and the participant level (level 2). As independent variables at level 1 we used the ratings of identity, necessity, baserate, and sufficiency. All ratings were centered using the individual participant mean rather than the grand mean. The reasoning behind this was that participants might have different response tendencies such that the relative rating would be a better predictor than the absolute values. Moreover, in a second step we added the participants' political orientation, political interest and satisfaction with the German political system as independent variables at level 2 (participant level).
+
+Model I contained only the level 1 predictors. Of the four ratings the extent to which participants identified with the labels, the necessity of the label to explain the behavior as well as the baserate of the label predicted the size of the SII-effect. An increase of one scale point in the identity ratings (on a five point scale) was associated with a decrease of `r coef_identity` ms in the SII-effect. This indicates that participants more strongly inferred labels the less they identified with them. An increase of one scale point in the necessity ratings (on a five point scale) was associated with an increase of `r coef_necessity` ms in the SII-effect. This indicates that participants more strongly inferred labels when they thought they were necessary to explain the behaviors. An increase of one scale point in the baserate ratings (on a five point scale) was associated with an increase of `r coef_baserate` ms in the SII-effect. This indicates that participants more strongly inferred labels that they deemed likely to apply to a stranger. The sufficiency rating had no significant effect. Together the four ratings explained `r mlm2_delta_r2_lvl1` % of the variance on level 1 and `r mlm2_delta_r2_lvl2` % of the variance on level 2.
+
+Model II contained the level 1 and level 2 predictors. Of the seven predictors still only identification, necessity, and baserate were significantly associated with the SII-effect. Together the seven predictors explained `r mlm3_delta_r2_lvl2` % of the variance on level 2.
+
+#### Results Model I
+```{r multilevel model 1, message = FALSE, warning = FALSE}
+sjPlot::tab_model(mlm2)
+```
+
+#### Results Model II
+```{r multilevel model 2, message = FALSE, warning = FALSE}
+sjPlot::tab_model(mlm3)
+```
+
+#### Visualization identity
+```{r multilevel visualization identity, message = FALSE, warning = FALSE}
+d_mlm %>% ggplot(aes(x = identity, y = rt_diff, group = subject_id)) +
+    geom_point(size = 1, col = "#88888830") +
+    labs(y = "SII-effect", x = "Identification") +
+    geom_smooth(method = "lm", se = FALSE, color = "#00e1ff30", size = 0.4) + # nolint
+    geom_smooth(method = "lm", se = FALSE, color = "#888888", aes(identity, rt_diff, group = NA)) +
+    theme_bw(base_size = 16) +
+    theme(legend.position = "none", panel.grid.minor = element_blank())
+```
+
+#### Visualization necessity
+```{r multilevel visualization necessity, message = FALSE, warning = FALSE}
+d_mlm %>% ggplot(aes(x = necessity, y = rt_diff, group = subject_id)) +
+    geom_point(size = 1, col = "#88888830") +
+    labs(y = "SII-effect", x = "Necessity") +
+    geom_smooth(method = "lm", se = FALSE, color = "#00e1ff30", size = 0.4) + # nolint
+    geom_smooth(method = "lm", se = FALSE, color = "#888888", aes(necessity, rt_diff, group = NA)) +
+    theme_bw(base_size = 16) +
+    theme(legend.position = "none", panel.grid.minor = element_blank())
+```
+
+#### Visualization baserate
+```{r multilevel visualization baserate, message = FALSE, warning = FALSE}
+d_mlm %>% ggplot(aes(x = baserate, y = rt_diff, group = subject_id)) +
+    geom_point(size = 1, col = "#88888830") +
+    labs(y = "SII-effect", x = "Baserate") +
+    geom_smooth(method = "lm", se = FALSE, color = "#00e1ff30", size = 0.4) + # nolint
+    geom_smooth(method = "lm", se = FALSE, color = "#888888", aes(baserate, rt_diff, group = NA)) +
+    theme_bw(base_size = 16) +
+    theme(legend.position = "none", panel.grid.minor = element_blank())
+```
