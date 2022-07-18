@@ -9,6 +9,8 @@ design <- getDesignGroupSequential(
     tolerance = 1e-08,
     typeBetaSpending = "bsKD")
 
+# Get design summary
+summary(design)
 # Get nominal alpha bounds
 design$stageLevels
 # Get nominal futility bounds
