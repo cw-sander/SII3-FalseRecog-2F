@@ -2,7 +2,7 @@
 ## Script name: data_preparation.r
 ##
 ## Purpose of script:
-##  Creates a long data.frame with rts and ratings.
+##  Creates a long data.frame with error rates, rts and ratings.
 ##  For each combination of five cutoff-criteria for slow outliers
 ##  (none, M + 2SD, 2500 ms, 2000 ms, 1500 ms), and three transformation
 ##  criteria (none, log, inverse) a column with reaction times is created
@@ -10,7 +10,7 @@
 ##
 ## Author: Carsten Sander
 ##
-## Date Created: 2022-06-09
+## Date Created: 2022-07-20
 ##
 ## Copyright (c) Carsten Sander, 2022
 ## Email: carsten.sander@uni-hamburg.de
@@ -25,213 +25,174 @@
 
 # Load packages
 library(tidyverse)
+library(readxl, include.only = "read_excel")
+library(lubridate, include.only = "ymd_hms")
 
 # Download raw data from Gitlab
-#paths <- read.csv("Processed data/raw-data-paths.csv", header = FALSE)[, 1]
-#pav <- lapply(paths, read_csv)
-#qua <- read.csv("https://gitlab.pavlovia.org/csander/sii2-proberecog-2f/raw/master/additional%20data/qualtrics.csv")[-c(1, 2), ] # nolint
-#stims <- read_excel("https://gitlab.pavlovia.org/csander/sii2-proberecog-2f/raw/master/stimuli/stimuli.xlsx") # nolint
-
-# Load raw data from local drive
-paths <- list.files("/Users/carsten/Documents/Eigene Experimente/SII2-ProbeRecog-2F/Gitlab/data/", ".csv") # nolint
-paths <- paste0("/Users/carsten/Documents/Eigene Experimente/SII2-ProbeRecog-2F/Gitlab/data/", paths) # nolint
+paths <- read.csv("Processed data/raw-data-paths.csv", header = FALSE)[, 1]
 pav <- lapply(paths, read_csv)
-qua <- read.csv("/Users/carsten/Documents/Eigene Experimente/SII2-ProbeRecog-2F/Gitlab/additional data/qualtrics.csv")[-c(1, 2), ] # nolint
-stims <- readxl::read_excel("/Users/carsten/Documents/Eigene Experimente/SII2-ProbeRecog-2F/Gitlab/stimuli/stimuli.xlsx") # nolint
+qua <- read.csv("https://gitlab.pavlovia.org/csander/sii3-falserecog-2f/raw/master/additional%20data/qualtrics.csv")[-c(1, 2), ] # nolint
+download.file("https://gitlab.pavlovia.org/csander/sii3-falserecog-2f/raw/master/stimuli/stimuli.xlsx", destfile = "./stimuli.xlsx", cacheOK = TRUE) # nolint
+stims <- readxl::read_excel("./stimuli.xlsx")
 
 # ---------------------------
 
 # Process pavlovia data
 trials <- data.frame()
-ratings_labels <- data.frame()
-ratings_reasons <- data.frame()
+ratings <- data.frame()
 subjects <- data.frame()
 
 # Loop over all individual data.frames
 for (i in seq(length(pav))) {
-    # Select relevant data for analysis
-    trials_i <- pav[[i]] %>%
-        filter(
-            trial_type == "test",
-            probe_type %in% c("implied", "implied_other")
-        ) %>%
-        select(
-            subject_id = ID, item_id, item_order, reason_type, label = probe,
-            probe_type, is_correct = c_probe_resp.corr, rt = c_probe_resp.rt
-        ) %>%
-        mutate(
-            probe_type = recode(probe_type,
-                "implied" = "im", "implied_other" = "io"),
-            item_order = recode(item_order,
-                "behavior first" = "br", "reason first" = "rb"))
-    # Calculate individual cutoff (M + 2 * SD) based on correct responses
-    rts <- trials_i$rt[trials_i$is_correct == 1]
-    m2sd <- mean(rts) + 2 * sd(rts)
-    # Define matrix of cutoff/transformation combinations
-    corrections <- data.frame(
-        cutoff = rep(c("none", "M2SD", "f25", "f20", "f15"), 3),
-        cutoff_value = rep(c(Inf, m2sd, 2.5, 2.0, 1.5), 3),
-        trans = c(rep("none", 5), rep("log", 5), rep("inv", 5)),
-        trans_function = c(rep("{}", 5), rep("log({})", 5), rep("(1 / {}) * -1", 5))) # nolint
-    # For each combination of cutoff criteria and transformations
-    for (c in seq(NROW(corrections))) {
-        # Get values for current correction
-        var_name <- paste0("rt_", corrections$cutoff[c], "_", corrections$trans[c]) # nolint
-        cutoff_value <- corrections$cutoff_value[c]
-        trans_function <- corrections$trans_function[c]
-        trans_function <- gsub("\\{\\}", "rts", trans_function)
-        # Apply corrections to rts
-        rts <- trials_i$rt
-        rts[rts > cutoff_value] <- NA
-        rts <- eval(parse(text = trans_function))
-        # Append data to data.frame
-        trials_i[, var_name] <- rts
-    }
-    # Build data.frame from individual datasets
-    trials <- dplyr::bind_rows(trials, trials_i)
+  # Select relevant data for analysis
+  names(pav[[i]])[names(pav[[i]]) == "STIMULUS_SET...10"] <- "STIMULUS_SET"
+  trials_i <- pav[[i]] %>%
+    filter(
+      trial_type == "test",
+      probe_type %in% c("implied", "implied_other")
+    ) %>%
+    select(
+      subject_id = ID, item_id, reason_type, label = probe, probe_type,
+      is_correct = c_probe_resp.corr, rt = c_probe_resp.rt,
+      stimulus_set = STIMULUS_SET
+    ) %>%
+    mutate(
+      probe_type = recode(probe_type,
+        "implied" = "im", "implied_other" = "io"))
+  # Calculate individual cutoff (M + 2 * SD) based on correct responses
+  rts <- trials_i$rt[trials_i$is_correct == 1]
+  m2sd <- mean(rts) + 2 * sd(rts)
+  # Define matrix of cutoff/transformation combinations
+  corrections <- data.frame(
+    cutoff = rep(c("none", "M2SD", "f80", "f60", "f40"), 3),
+    cutoff_value = rep(c(Inf, m2sd, 8, 6, 4), 3),
+    trans = c(rep("none", 5), rep("log", 5), rep("inv", 5)),
+    trans_function = c(rep("{}", 5), rep("log({})", 5), rep("(1 / {}) * -1", 5))) # nolint
+  # For each combination of cutoff criteria and transformations
+  for (c in seq(NROW(corrections))) {
+    # Get values for current correction
+    var_name <- paste0("rt_", corrections$cutoff[c], "_", corrections$trans[c]) # nolint
+    cutoff_value <- corrections$cutoff_value[c]
+    trans_function <- corrections$trans_function[c]
+    trans_function <- gsub("\\{\\}", "rts", trans_function)
+    # Apply corrections to rts
+    rts <- trials_i$rt
+    rts[rts > cutoff_value] <- NA
+    rts <- eval(parse(text = trans_function))
+    # Append data to data.frame
+    trials_i[, var_name] <- rts
+  }
+  # Build data.frame from individual datasets
+  trials <- dplyr::bind_rows(trials, trials_i)
 
-    # Get summary data on subjects (mean rt and rate of correct
-    # responses to exclude those not meeting the pre-defined criteria)
-    subjects[i, "ID"] <- trials_i$subject_id[1]
-    subjects[i, "correct_rate"] <- sum(trials_i$is_correct) / nrow(trials_i)
-    subjects[i, "mean_rt"] <- mean(trials_i$rt_M2SD_none[trials_i$is_correct == 1], na.rm = TRUE) # nolint
+  # Get summary data on subjects
+  # suspicious responding: responded with always the same key
+  subjects[i, "ID"] <- trials_i$subject_id[1]
+  sus <- pav[[i]] %>%
+    filter(trial_type %in% c("test", "filler")) %>%
+    select(response_key = c_probe_resp.keys)
+  subjects[i, "suspicious_responding"] <- ifelse(
+    test = all(sus == "f") | all(sus == "j"),
+    yes = TRUE, no = FALSE)
 
-    # Get ratings of labels regarding valence
-    # identification, and availability
-    ratings_labels_i <- pav[[i]] %>%
-        filter(rating_block %in% c("identity", "necessity", "baserate")) %>%
-        select(
-            subject_id = ID,
-            label = rated_label,
-            response = rating_response,
-            block = rating_block,
-        ) %>%
-        pivot_wider(
-            names_from = block,
-            values_from = response,
-            names_glue = "rating_{block}"
-        )
-    ratings_reasons_i <- pav[[i]] %>%
-        filter(rating_block == "sufficiency") %>%
-        select(
-            subject_id = ID,
-            response = rating_response,
-            block = rating_block,
-            item_id = rated_item_id,
-            reason_type = rated_reason_type
-        ) %>%
-        pivot_wider(
-            names_from = block,
-            values_from = response,
-            names_glue = "rating_{block}"
-        )
-    ratings_labels <- dplyr::bind_rows(ratings_labels, ratings_labels_i)
-    ratings_reasons <- dplyr::bind_rows(ratings_reasons, ratings_reasons_i)
+  # Get sufficiency ratings
+  ratings_i <- pav[[i]] %>%
+    filter(rating_block == "sufficiency") %>%
+    select(
+      subject_id = ID,
+      sufficiency = rating_response,
+      item_id = rated_item_id,
+      reason_type = rated_reason_type
+    )
+  ratings <- dplyr::bind_rows(ratings, ratings_i)
 }
 
 # ---------------------------
 
-# Calculate cutoff to exclude participants whose mean
-# reaction time was slower than two SDs over the sample mean
-cutoff <- mean(subjects$mean_rt) + 2 * sd(subjects$mean_rt)
 subjects <- subjects %>%
-    # Merge summary data with qualtrics data
-    left_join(qua, by = "ID") %>%
-    filter(part == 2) %>%
-    # Recode survey items
-    mutate(
-        consent_given = ifelse(
-            grepl("Ja", informed_consent.) |
-            grepl("Nein", informed_consent_dc.),
-            1, 0),
-        compliance = as.numeric(recode(compliance.,
-            "überhaupt nicht\1" = "1", "sehr gewissenhaft\n10" = "10")),
-        age = as.numeric(str_extract(age, "\\d*")),
-        gender = recode(gender,
-            "anderes (z.B. nicht-binär)" = "other",
-            "männlich" = "male", "weiblich" = "female",
-            "keine Angabe" = "not specified"),
-        pol_orientation = as.numeric(recode(pol_orientation,
-            "links" = "1", "rechts" = "10")),
-        pol_interest = as.numeric(recode(pol_interest.,
-            "sehr stark" = "10", "überhaupt nicht" = "1")),
-        pol_justice_freedom_1 = recode(pol_justice_freedom_1,
-            "voll übereinstimmen" = 1, "weitgehend übereinstimmen" = 2,
-            "weitgehend ablehnen" = 3, "voll und ganz ablehnen" = 4),
-        pol_justice_freedom_2 = recode(pol_justice_freedom_2,
-            "voll übereinstimmen" = 1, "weitgehend übereinstimmen" = 2,
-            "weitgehend ablehnen" = 3, "voll und ganz ablehnen" = 4),
-        pol_equal_treatment_1 = recode(pol_equal_treatment_1,
-            "voll übereinstimmen" = 4, "weitgehend übereinstimmen" = 3,
-            "weitgehend ablehnen" = 2, "voll und ganz ablehnen" = 1),
-        pol_equal_treatment_2 = recode(pol_equal_treatment_2,
-            "voll übereinstimmen" = 1, "weitgehend übereinstimmen" = 2,
-            "weitgehend ablehnen" = 3, "voll und ganz ablehnen" = 4)
-    ) %>%
-    mutate(
-        # Combine political satisfaction items into one scale
-        pol_satisfaction = rowMeans(select(.,
-            matches("pol_jus|pol_equ")), na.rm = TRUE)
-    ) %>%
-    # Exclusion according to the pre-registered exclusion criteria
-    # criterion "a. who did not complete the probe recognition task" and
-    # criterion "c. who self-report not being fluent in German"
-    # are neccessarily not met due to the manner of data collection.
-    # 170 --> 163 (7 excluded, read reasons below)
-    filter(
-        # b. who withdraw their consent to
-        # data analysis after full debriefing
-        consent_given == 1, # excludes 0
-        # d. whose recognition performance
-        # is < 60% in the probe recognition task
-        correct_rate >= .6, # excludes 0
-        # e. whose average response times are slower
-        # than two standard deviations of the sample mean
-        mean_rt < cutoff, # excludes 5
-        # f. who self-report not having followed the instructions
-        # conscientiously (5 or lower on a scale from 1 to 10) or
-        # rate their own data to be unfit for analyses
-        compliance > 5, # excludes 1
-        data_quality. == "ja" # excludes 1
-    ) %>%
-    select(subject_id = ID, age, gender, pol_interest,
-        pol_orientation, pol_satisfaction)
+  # Merge summary data with qualtrics data
+  left_join(qua, by = "ID") %>%
+  filter(part == 2) %>%
+  # Recode survey items
+  mutate(
+    consent_given = factor(ifelse(
+      grepl("Ja", informed_consent.) |
+      grepl("Nein", informed_consent_dc.),
+      1, 0)),
+    age = as.numeric(str_extract(age, "\\d*")),
+    gender = factor(recode(gender,
+      "anderes (z.B. nicht-binär)" = "other",
+      "männlich" = "male", "weiblich" = "female",
+      "keine Angabe" = "not specified")),
+    pol_orientation = as.numeric(recode(pol_orientation,
+      "links" = "1", "rechts" = "10")),
+    pol_interest = as.numeric(recode(pol_interest.,
+      "sehr stark" = "10", "überhaupt nicht" = "1"))
+  # Exclude participants
+  ) %T>% {
+    assign(x = "last_n", value = nrow(.), envir = .GlobalEnv)
+    cat("Exclusion according to the pre-registered exclusion criteria\n\n")
+    cat("Participants before exclusion:", nrow(.), "\n")
+
+  } %>%
+  filter(ymd_hms(StartDate) > ymd_hms("2022-07-21 13:09:38")) %T>% {
+    cat("x. exclusion due to programming error (wrong presentation\n",
+      "  time and unbalanced cell distribution):", last_n - nrow(.), "\n")
+    cat("a. participants who did not complete the task: 0\n",
+      "  (necessarily not met due to the manner of data collection)\n")
+    assign(x = "last_n", value = nrow(.), envir = .GlobalEnv)
+  } %>%
+  filter(consent_given == 1) %T>% {
+    cat("b. participants who withdrew their consent to\n",
+      "  data analysis after full debriefing:", last_n - nrow(.), "\n")
+    assign(x = "last_n", value = nrow(.), envir = .GlobalEnv)
+  } %>%
+  filter(suspicious_responding == FALSE) %T>% {
+    cat("c. participants who give the same response in\n",
+      "  all of the 36 test trials:", last_n - nrow(.), "\n")
+    assign(x = "last_n", value = nrow(.), envir = .GlobalEnv)
+  } %>%
+  filter(data_quality. == "ja") %T>% {
+    cat("d. participants who rate their own data to be\n",
+      "  unfit for analyses:", last_n - nrow(.), "\n")
+    cat("Participants after exclusion:", nrow(.), "\n")
+  } %>%
+  select(subject_id = ID, age, gender, pol_interest, pol_orientation, assumptions)
 
 # ---------------------------
 
 # Select behavior, reason and ratings from stimulus file
 stims <- stims %>%
-    filter(trial_type == "test") %>%
-    select(
-        item_id, behavior,
-        reason_sufficient = reason,
-        reason_control = ctrl_reason,
-        score_sufficient = reason_score,
-        score_control = control_score,
-        sconsensus, cconsensus, label_score, reason_diff
-    ) %>%
-    pivot_longer(
-        cols = c(reason_sufficient, reason_control, score_sufficient, score_control), # nolint
-        names_to = c(".value", "reason_type"),
-        names_pattern = "(.*)_(.*)"
-    ) %>%
-    rename(reason_score = score)
+  filter(trial_type == "test") %>%
+  select(
+    item_id, behavior,
+    reason_sufficient = reason,
+    reason_control = ctrl_reason,
+    score_sufficient = reason_score,
+    score_control = control_score,
+    sconsensus, cconsensus, label_score, reason_diff
+  ) %>%
+  pivot_longer(
+    cols = c(reason_sufficient, reason_control, score_sufficient, score_control), # nolint
+    names_to = c(".value", "reason_type"),
+    names_pattern = "(.*)_(.*)"
+  ) %>%
+  rename(reason_score = score)
 
 # ---------------------------
 
 # Merge all data.frames
 d_long <- trials %>%
-    left_join(ratings_labels) %>%
-    left_join(ratings_reasons) %>%
-    filter(subject_id %in% subjects$subject_id) %>%
-    left_join(subjects) %>%
-    left_join(stims) %>%
-    select(-rt) %>%
-    mutate(reason_type = recode(reason_type, "sufficient" = "suff", "control" = "ctrl")) %>% # nolint
-    mutate_at(c("reason_type", "probe_type", "item_order"), factor)
+  left_join(ratings) %>%
+  filter(subject_id %in% subjects$subject_id) %>%
+  left_join(subjects) %>%
+  left_join(stims) %>%
+  select(-rt) %>%
+  mutate(probe_type = recode(probe_type, "im" = "implied", "io" = "implied other")) %>% # nolint
+  mutate_at(c("subject_id", "item_id", "reason_type",
+        "probe_type", "stimulus_set"), factor)
 
 # ---------------------------
 
 # Export data
-saveRDS(d_long, file = "Processed data/d-long-250.rds")
-#d_long <- readRDS("Processed data/d-long.rds")
+saveRDS(d_long, file = "Processed data/d-long-386.rds")

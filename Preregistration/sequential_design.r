@@ -1,3 +1,23 @@
+## ---------------------------
+## Script name: sequential_design.r
+##
+## Purpose of script:
+##  Get efficacy and futility boundaries
+##  and required sample sizes for a
+##  sequential analysis
+##
+## Author: Carsten Sander
+##
+## Date Created: 2022-07-13
+##
+## Copyright (c) Carsten Sander, 2022
+## Email: carsten.sander@uni-hamburg.de
+## ---------------------------
+## Notes:
+##  rpact Version -- rpact_3.3.0
+##  R Version -- 4.1.2
+## ---------------------------
+
 library(rpact)
 design <- getDesignGroupSequential(
     typeOfDesign = "asKD",
@@ -8,7 +28,6 @@ design <- getDesignGroupSequential(
     sided = 1,
     tolerance = 1e-08,
     typeBetaSpending = "bsKD")
-
 # Get design summary
 summary(design)
 # Get nominal alpha bounds
