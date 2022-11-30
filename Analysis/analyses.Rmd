@@ -477,7 +477,7 @@ c1 <- item %>%
 knitr::kable(c1, format = "markdown")
 ```
 
-There was a marginally significant correlation between the SII-effect of in this study and the SII-effect of study 2. This indicates that across two different experimental paradigms there is some degree of stability regarding the by-item effects. However, none of the ratings that predicted the SII-effect in study 2 also did so in study 3.
+There was a marginally significant correlation between the SII-effect in this study and the SII-effect of study 2. This indicates that across two different experimental paradigms there is some degree of stability regarding the by-item effects. However, none of the ratings that predicted the SII-effect in study 2 also did so in study 3.
 
 #### SII-effect from Study 2
 ```{r by-item sii sii-effect, message = FALSE}
