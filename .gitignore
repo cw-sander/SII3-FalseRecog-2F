@@ -1,4 +1,6 @@
 # Ignored folders
+Preregistration/git-ignore
+Processed data/git-ignore
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

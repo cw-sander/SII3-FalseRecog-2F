@@ -34,6 +34,11 @@ font_add("Nunito",
   italic = "/Users/carsten/Library/Fonts/NunitoSans-Italic.ttf",
   bold = "/Users/carsten/Library/Fonts/NunitoSans-Bold.ttf",
   bolditalic = "/Users/carsten/Library/Fonts/NunitoSans-BoldItalic.ttf")
+font_add("Calibri",
+  regular = "/Users/carsten/Library/Fonts/Calibri.ttf",
+  italic = "/Users/carsten/Library/Fonts/Calibrii.ttf",
+  bold = "/Users/carsten/Library/Fonts/Calibrib.ttf",
+  bolditalic = "/Users/carsten/Library/Fonts/Calibriz.ttf")
 showtext_auto()
 
 # Custom functions
@@ -204,7 +209,7 @@ mlm_compare <- function(new, old) {
   return(out)
 }
 theme_cs_talk <- function(font = "Nunito", lab_size = 16, label_size = 14,
-  dark = "#465263", light = "#E1E9ED", solid_facet = TRUE) {
+  dark = "#465263", light = "#849AB9", solid_facet = TRUE) {
   if (solid_facet) {
   facet_fill <- dark
   facet_text <- light
@@ -220,7 +225,9 @@ theme_cs_talk <- function(font = "Nunito", lab_size = 16, label_size = 14,
   panel.background = element_rect(fill = "transparent"),
   legend.background = element_rect(fill = "transparent", color = NA),
   strip.background = element_rect(color = facet_fill,
-    fill = facet_fill, size = 1),
+    fill = facet_fill, linewidth = 1),
+  panel.border = element_rect(color = dark, fill = NA, linewidth = 1),
+  legend.key = element_rect(fill = "transparent", color = NA_character_),
   # Text elements
   plot.title = element_text(family = font, size = lab_size,
     face = "bold", hjust = 0, vjust = 2, color = dark),
@@ -241,11 +248,52 @@ theme_cs_talk <- function(font = "Nunito", lab_size = 16, label_size = 14,
   strip.text = element_text(family = font, size = label_size,
     color = facet_text, margin = margin(4, 4, 4, 4)),
   # Line elements
-  axis.ticks = element_line(color = dark, size = 0.5),
+  axis.ticks = element_line(color = dark, linewidth = 0.5),
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank()
+  )
+}
+theme_cs_apa <- function(font = "Calibri", lab_size = 16, label_size = 14,
+  dark = "#000000", light = "#ffffff") {
+  theme_bw(base_size = 16) %+replace%
+  theme(
+  # Rectangle elements
+  plot.background = element_blank(),
+  panel.background = element_rect(color = "transparent", fill = "transparent"),
+  legend.background = element_rect(fill = "transparent", color = dark, linewidth = 0.5),
+  legend.box.margin = margin(0, 1, 0, 0, "cm"),
+  strip.background = element_rect(color = "transparent",
+    fill = light, linewidth = 1),
   legend.key = element_rect(fill = "transparent", color = NA_character_),
+  # Text elements
+  plot.title = element_text(family = font, size = lab_size,
+    face = "bold", hjust = 0, vjust = 2, color = dark),
+  plot.subtitle = element_text(family = font,
+    size = lab_size - 2, color = dark),
+  plot.margin = margin(1, 0.5, 1, 0.5, "cm"),
+  plot.caption = element_text(family = font, size = lab_size,
+    hjust = 1, color = dark),
+  axis.title = element_text(family = font, size = lab_size,
+    color = dark, face = "bold"),
+  axis.text = element_text(family = font, size = label_size,
+    color = dark),
+  axis.text.x = element_text(margin = margin(5, b = 10),
+    color = dark),
+  legend.title = element_text(family = font, size = lab_size,
+    color = dark, hjust = 0, , face = "bold"),
+  legend.text = element_text(family = font, size = label_size,
+    color = dark),
+  strip.text = element_text(family = font, size = lab_size,
+    color = dark, face = "bold"),
+  # Line elements
+  axis.ticks = element_blank(),
+  axis.line = element_line(color = dark, linewidth = 0.5),
   panel.grid.major = element_blank(),
   panel.grid.minor = element_blank(),
-  panel.border = element_rect(color = dark, fill = NA, size = 1)
+  panel.border = element_rect(fill = "transparent", color = "white"),
+  legend.spacing.y = unit(0.4, "cm"),
+  legend.key.height = unit(0.5, "cm"),
+  legend.key.width = unit(0.5, "cm")
   )
 }
 ```
@@ -288,9 +336,9 @@ check_dz <- check %>%
   forma()
 
 # Print t-test
-check_report_plot <- paste0("t(", check_t$n1, ") = ", check_t$statistic,
+check_report_plot <- paste0("t(", check_t$df, ") = ", check_t$statistic,
   ",\n ", check_t$p, ",\n dz = ", check_dz)
-check_report_text <- paste0("t(", check_t$n1, ") = ", check_t$statistic,
+check_report_text <- paste0("t(", check_t$df, ") = ", check_t$statistic,
   ", ", check_t$p, ", d~z~ = ", check_dz)
 
 # Plot results
@@ -422,7 +470,7 @@ er_3f_desc %>%
   {
     ggplot(., aes(reason_type, mean, color = probe_type, group = probe_type)) +
     facet_wrap(. ~ stimulus_set, labeller = "label_value") +
-    labs(x = "Reason type", y = "Mean response latency in seconds",
+    labs(x = "Reason type", y = "False recognition rate",
       color = "Probe type") +
     scale_color_manual(values = c("#849AB9", "#465263")) +
     geom_line() +
@@ -439,6 +487,83 @@ er_3f_desc %>%
 knitr::kable(er_3f_post, format = "markdown")
 ```
 
+### Comparison between studies
+```{r comparison studies, message = FALSE}
+load(here::here("Processed data/desc_SII2b.RData"))
+load(here::here("Processed data/desc_SII2.RData"))
+desc_SII3 <- er_ex %>%
+  select(reason_type, probe_type, er) %>%
+  group_by(reason_type, probe_type) %>%
+  get_summary_stats(er, type = "mean_sd") %>%
+  mutate(
+    ci95_low = mean - 1.96 * sd / sqrt(n),
+    ci95_upp = mean + 1.96 * sd / sqrt(n),
+    experiment = "Exp. 5",
+    ancillary_statement = recode(reason_type, "sufficient" = "Reason", "control" = "Control"),
+    probe_type = recode(probe_type, "implied" = "Implied", "implied other" = "Implied-Other"))
+desc_SII2b <- desc_SII2b %>%
+  mutate(
+    ancillary_statement = recode(reason_type, "sufficient" = "Reason", "control" = "Control"),
+    probe_type = recode(probe_type, "implied" = "Implied", "implied other" = "Implied-Other"))
+desc_SII2 <- desc_SII2 %>%
+  mutate(
+    ancillary_statement = recode(reason_type, "sufficient" = "Reason", "control" = "Control"),
+    probe_type = recode(probe_type, "implied" = "Implied", "implied other" = "Implied-Other"))
+
+p1 <- desc_SII2b %>%
+  ggplot(., aes(x = ancillary_statement, y = mean, fill = probe_type)) +
+  facet_wrap(. ~ experiment, labeller = "label_value") +
+  labs(x = "", y = "Mean Rating",
+    fill = "Probe Type") +
+  scale_fill_manual(values = c("#c4c4c4", "#ffffff")) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_cartesian(ylim = c(0, 5)) +
+  geom_bar(stat = "identity", position = position_dodge(0.7),
+    color = "#000000", width = 0.6) +
+  geom_errorbar(aes(ymin = ci95_low, ymax = ci95_upp),
+    position = position_dodge(0.7), width = 0.1) +
+  theme_cs_apa() +
+  theme(legend.position = "none", panel.border = element_blank())
+
+p2 <- desc_SII2 %>%
+  ggplot(., aes(x = ancillary_statement, y = mean, fill = probe_type)) +
+  facet_wrap(. ~ experiment, labeller = "label_value") +
+  labs(x = "Ancillary Statement", y = "Mean Response Latency in ms",
+    fill = "Probe Type") +
+  scale_fill_manual(values = c("#c4c4c4", "#ffffff")) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_cartesian(ylim = c(600, 1040)) +
+  geom_bar(stat = "identity", position = position_dodge(0.7),
+    color = "#000000", width = 0.6) +
+  geom_errorbar(aes(ymin = ci95_low, ymax = ci95_upp),
+    position = position_dodge(0.7), width = 0.1) +
+  theme_cs_apa() +
+  theme(legend.position = "none", panel.border = element_blank())
+
+p3 <- desc_SII3 %>%
+  ggplot(., aes(x = ancillary_statement, y = mean, fill = probe_type)) +
+  facet_wrap(. ~ experiment, labeller = "label_value") +
+  labs(x = "", y = "False Recognition Rate",
+    fill = "Probe Type") +
+  scale_fill_manual(values = c("#c4c4c4", "#ffffff")) +
+  scale_y_continuous(expand = c(0, 0)) +
+  coord_cartesian(ylim = c(0, 0.7)) +
+  geom_bar(stat = "identity", position = position_dodge(0.7),
+    color = "#000000", width = 0.6) +
+  geom_errorbar(aes(ymin = ci95_low, ymax = ci95_upp),
+    position = position_dodge(width = 0.7), width = 0.1) +
+  theme_cs_apa() +
+  theme(panel.border = element_blank()) +
+  guides(fill = guide_legend(byrow = TRUE))
+
+p <- ggarrange(p1, p2, p3, ncol = 3, nrow = 1,
+  legend.grob = get_legend(p3), legend = "right")
+p
+ggexport(p, width = 13, height = 5,
+  filename = here::here("Analysis/exp-345-barplot.pdf"))
+
+```
+
 ### Exploratory reaction time analysis
 We conducted no exploratory reaction time analysis because we deemed the number of correct responses per cell to be too small to calculate reliable averages.
 
@@ -449,7 +574,6 @@ In this paradigm error rates are the primary response variable. We expect the er
 
 #### Correlation matrix
 ```{r by-item sii correlation, message = FALSE}
-item_ratings_sii2 <- readRDS(here::here("Processed data/item-ratings-SII2.RDS"))
 item_suff <- d_long %>%
   select(item_id, reason_type, sufficiency) %>%
   group_by(item_id, reason_type) %>%
@@ -463,21 +587,16 @@ item <- d_long %>%
   mutate(er = errors / n_trials, .keep = "unused") %>%
   pivot_wider(names_from = probe_type, values_from = er) %>%
   mutate(sii_effect = implied - `implied other`, .keep = "unused") %>%
-  left_join(item_suff) %>%
-  left_join(item_ratings_sii2,
-    by = c("item_id", "reason_type"),
-    suffix = c("", "_sii2"))
+  left_join(item_suff)
 
 c1 <- item %>%
   filter(reason_type == "sufficient") %>%
-  select(sii_effect, sii_effect_sii2, identity, necessity,
-  baserate, sufficiency, sufficiency_sii2) %>%
+  select(sii_effect, identity, necessity,
+  baserate, sufficiency) %>%
   cor_table()
 
 knitr::kable(c1, format = "markdown")
 ```
-
-There was a marginally significant correlation between the SII-effect in this study and the SII-effect of study 2. This indicates that across two different experimental paradigms there is some degree of stability regarding the by-item effects. However, none of the ratings that predicted the SII-effect in study 2 also did so in study 3.
 
 #### SII-effect from Study 2
 ```{r by-item sii sii-effect, message = FALSE}
