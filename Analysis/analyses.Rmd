@@ -1,5 +1,5 @@
 ---
-title: "Analyses for SII Study 3"
+title: "Analyses for SII Experiment 5"
 output: 
   html_notebook:
   code_folding: hide
@@ -142,7 +142,7 @@ cor_table <- function(data, method = c("pearson", "spearman")) {
   coefs <- data %>%
   cor_mat(method = method[1]) %>%
   rowwise() %>%
-  mutate(across(!1, forma, 2))
+  mutate(across(!1, ~ forma(.x, 2)))
   for (row in seq(2, nrow(coefs))) {
   for (col in seq(2, ncol(coefs) - 1)) {
     c <- coefs[row, col]
@@ -156,57 +156,6 @@ cor_table <- function(data, method = c("pearson", "spearman")) {
   select(-last_col()) %>%
   rename(variable = 1)
   return(coefs)
-}
-mlm_compare <- function(new, old) {
-  ## ---------------------------
-  ## Compare two multilevel models
-  ##
-  ## Outputs a list with a test comparing the models ($test),
-  ## a formatted p-value ($p), the variance explained by the
-  ## random and fixed effects ($var_exp) and the percentage
-  ## increase in variance explained in the new compared to
-  ## the old model.
-  ##
-  ## @new new model
-  ## @old old model to compare the new
-  ##    model against
-  ##
-  ## @out list with statistics
-  ## ---------------------------
-
-  out <- list()
-
-  # Model comparison
-  out$test <- anova(new, old)
-  out$p <- formp(out$test[2, "Pr(>Chisq)"], TRUE)
-
-  # Stats new model
-  var_new <- as.data.frame(lme4::VarCorr(new))
-  var_exp <- data.frame(row.names = c("old", "new"))
-  # Loop across random effects
-  for (i in seq_along(var_new[, 1])) {
-  var_exp_i <- var_new$vcov[i] / sum(var_new$vcov) * 100
-  var_exp[2, var_new$grp[i]] <- var_exp_i
-  }
-
-  # Stats old model
-  if (class(old) != "lm") {
-  var_old <- as.data.frame(lme4::VarCorr(old))
-  # Loop across random effects
-  for (i in seq_along(var_old[, 1])) {
-    var_exp_i <- var_old$vcov[i] / sum(var_old$vcov) * 100
-    var_exp[1, var_old$grp[i]] <- var_exp_i
-  }
-  var_exp["diff", ] <- var_exp[1, ] - var_exp[2, ]
-  var_exp_delta <- ((var_exp[3, ] / var_exp[1, ]) * 100)
-  var_exp_delta <- sapply(var_exp_delta, forma)
-  var_exp[] <- apply(var_exp, c(1, 2), forma)
-  out$var_exp_delta <- var_exp_delta
-  } else if (class(old) == "lm") {
-  var_exp[2, ] <- sapply(var_exp[2, ], forma)
-  }
-  out$var_exp <- var_exp
-  return(out)
 }
 theme_cs_talk <- function(font = "Nunito", lab_size = 16, label_size = 14,
   dark = "#465263", light = "#849AB9", solid_facet = TRUE) {
@@ -298,9 +247,6 @@ theme_cs_apa <- function(font = "Calibri", lab_size = 16, label_size = 14,
 }
 ```
 
-### Introduction
-Research on person perception has revealed that people tend to attribute other's behavior to stable person characteristics, even if it can just as well be explained by reasons such as situational factors or mental states. This tendency is known as the correspondence bias (Gilbert & Malone, 1995) and may play an important role in the domain of political polarization. Specifically, people may attribute each other's politically relevant behaviors to stable ideological dispositions (such as leftist, conservative, racist, or feminist), while neglecting potential other causes and thereby impeding mutual understanding. To investigate the role of the correspondence bias in political polarization, we examine whether spontaneous ideological inferences are reduced when behaviors are accompanied by information on relatively sufficient reasons for the behavior. We thus extend previous research on spontaneous trait inferences (STI, Winter & Uleman, 1984) and the correspondence bias to spontaneous inferences of ideological dispositions.
-
 ### Sample Characteristics
 We collected data from a total of N = 414 participants. Following our pre-registered exclusion criteria, we excluded 1 participant who did not give informed consent, 0 who gave the same response in all of the 36 test trials, and 7 who rated their own data to be unfit for analysis. We further had to exclude 20 participants due to a programming error. This resulted in a sample of N = `r nrow(dems)` participants (`r nrow(filter(dems, gender == "female"))` female, `r nrow(filter(dems, gender == "male"))` male, `r nrow(filter(dems, gender == "other"))` other, `r nrow(filter(dems, gender %in% c("not specified","")))` not specified; average age M = `r round(mean(dems$age, na.rm = TRUE), 1)` years, SD = `r round(sd(dems$age, na.rm = TRUE), 1)`, ranging from `r min(dems$age, na.rm = TRUE)` to `r max(dems$age, na.rm = TRUE)`). Participants were recruited via the online platform Prolific (www.prolific.co) and received monetary compensation of 3.00 GBP for completing the 20-minute study. An additional 88 people started the experiment on prolific but either returned their submission, timed-out, or only partially completed the experiment due to technical issues.
 
@@ -342,22 +288,19 @@ check_report_text <- paste0("t(", check_t$df, ") = ", check_t$statistic,
   ", ", check_t$p, ", d~z~ = ", check_dz)
 
 # Plot results
-check %>%
-  {
-    ggplot(., aes(x = mn, fill = reason_type, color = reason_type)) +
-    labs(x = "Mean sufficiency rating", y = "Count",
-       fill = "Reason type", color = "Reason type") +
-    scale_x_continuous(limits = c(1, 5), oob = scales::oob_keep) +
-    geom_histogram(position = "identity", alpha = .7, bins = 20) +
-    scale_fill_manual(values = c("#849AB9", "#465263")) +
-    scale_color_manual(values = c("#849AB9", "#465263")) +
-    geom_label(aes(x = 4.3, y = 68, label = check_report_plot),
-      fill = "white", show.legend = FALSE,
-      label.padding = unit(0.5, "lines"), label.size = 0.5) +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 6, height = 5,
-       filename = here::here("Analysis/check.pdf"))
+check_plot <- check %>%
+  ggplot(., aes(x = mn, fill = reason_type, color = reason_type)) +
+  labs(x = "Mean sufficiency rating", y = "Count",
+      fill = "Reason type", color = "Reason type") +
+  scale_x_continuous(limits = c(1, 5), oob = scales::oob_keep) +
+  geom_histogram(position = "identity", alpha = .7, bins = 20) +
+  scale_fill_manual(values = c("#849AB9", "#465263")) +
+  scale_color_manual(values = c("#849AB9", "#465263")) +
+  geom_label(aes(x = 4.3, y = 68, label = check_report_plot),
+    fill = "white", show.legend = FALSE,
+    label.padding = unit(0.5, "lines"), label.size = 0.5) +
+  theme_cs_talk()
+check_plot
 ```
 
 We included a manipulation check for reason type. The sufficient reasons are supposed to sufficiently explain the behaviors, whereas the control reasons are supposed to insufficiently explain the behavior (or not explain the behavior at all). We thus asked participants at the end of the study to rate the sufficiency of each reason for the respective behavior and expected the sufficient reasons to score higher than the control reasons. To test this, we conducted a paired t-test. On average, participants gave significantly higher sufficiency ratings in the sufficient condition (M = `r check_desc$mean[2]`, SD = `r check_desc$sd[2]`) than in the control condition (M = `r check_desc$mean[1]`, SD = `r check_desc$sd[1]`), `r check_report_text`. We infer from this, that our manipulation of reason type worked.
@@ -413,39 +356,33 @@ We calculated false recognition rates by dividing the number of erroneous respon
 
 #### Outlier detection
 ```{r er outlier, warning = FALSE, message = FALSE}
-er_ex %>%
-  {
-    ggplot(., aes(reason_type, er, color = probe_type)) +
-    geom_boxplot() +
-    labs(x = "Reason type", y = "False recognition rate",
-      color = "Probe type") +
-    scale_color_manual(values = c("#849AB9", "#465263")) +
-    geom_point(
-      # Replace all non-outlier values by NA
-      data = mutate(er, er = replace(er, is_extreme == FALSE, NA)),
-      position = position_dodge(width = 0.75), shape = 4,
-      size = 4, show.legend = FALSE) +
-    theme_cs_talk()
-  } %T>%
-  ggexport(., width = 7, height = 5,
-       filename = here("Analysis/er-outlier.pdf"))
+er_outlier <- er_ex %>%
+  ggplot(., aes(reason_type, er, color = probe_type)) +
+  geom_boxplot() +
+  labs(x = "Reason type", y = "False recognition rate",
+    color = "Probe type") +
+  scale_color_manual(values = c("#849AB9", "#465263")) +
+  geom_point(
+    # Replace all non-outlier values by NA
+    data = mutate(er, er = replace(er, is_extreme == FALSE, NA)),
+    position = position_dodge(width = 0.75), shape = 4,
+    size = 4, show.legend = FALSE) +
+  theme_cs_talk()
+er_outlier
 ```
 
 We looked for extreme outliers in each cell of the design. We defined them as values above Q3 + 3 * IQR or below Q1 - 3 * IQR. We found and excluded `r er_ex_n` participants whose values were extreme outliers.
 
 #### QQ-Plot
 ```{r er checking normality, message = FALSE}
-er_ex %>%
-  {
-    ggplot(., aes(sample = er)) +
-    labs(x = "Theoretical quantiles", y = "Data quantiles") +
-    stat_qq(color = "#465263") +
-    stat_qq_line(color = "#465263") +
-    facet_grid(probe_type ~ reason_type, labeller = "label_value") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 7,
-       filename = here("Analysis/er-qq.pdf"))
+er_qq <- er_ex %>%
+  ggplot(., aes(sample = er)) +
+  labs(x = "Theoretical quantiles", y = "Data quantiles") +
+  stat_qq(color = "#465263") +
+  stat_qq_line(color = "#465263") +
+  facet_grid(probe_type ~ reason_type, labeller = "label_value") +
+  theme_cs_talk()
+er_qq
 ```
 
 Upon visual inspection the distributions of error rates in the different conditions did not seem severely non-normal. We therefore applied no further transformations before conducting our analysis.
@@ -466,20 +403,17 @@ knitr::kable(er_3f_desc, format = "markdown")
 
 #### Lineplot
 ```{r er plotting results, message = FALSE}
-er_3f_desc %>%
-  {
-    ggplot(., aes(reason_type, mean, color = probe_type, group = probe_type)) +
-    facet_wrap(. ~ stimulus_set, labeller = "label_value") +
-    labs(x = "Reason type", y = "False recognition rate",
-      color = "Probe type") +
-    scale_color_manual(values = c("#849AB9", "#465263")) +
-    geom_line() +
-    geom_point(size = 3) +
-    geom_linerange(aes(ymin = ci95_low, ymax = ci95_upp)) +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 8, height = 5,
-       filename = here::here("Analysis/er-lineplot.pdf"))
+er_lineplot <- er_3f_desc %>%
+  ggplot(., aes(reason_type, mean, color = probe_type, group = probe_type)) +
+  facet_wrap(. ~ stimulus_set, labeller = "label_value") +
+  labs(x = "Reason type", y = "False recognition rate",
+    color = "Probe type") +
+  scale_color_manual(values = c("#849AB9", "#465263")) +
+  geom_line() +
+  geom_point(size = 3) +
+  geom_linerange(aes(ymin = ci95_low, ymax = ci95_upp)) +
+  theme_cs_talk()
+er_lineplot
 ```
 
 #### Post-hoc tests
@@ -488,7 +422,7 @@ knitr::kable(er_3f_post, format = "markdown")
 ```
 
 ### Comparison between studies
-```{r comparison studies, message = FALSE}
+```{r comparison studies, message = FALSE, fig.width = 10, warning = FALSE}
 load(here::here("Processed data/desc_SII2b.RData"))
 load(here::here("Processed data/desc_SII2.RData"))
 desc_SII3 <- er_ex %>%
@@ -559,233 +493,6 @@ p3 <- desc_SII3 %>%
 p <- ggarrange(p1, p2, p3, ncol = 3, nrow = 1,
   legend.grob = get_legend(p3), legend = "right")
 p
-ggexport(p, width = 13, height = 5,
-  filename = here::here("Analysis/exp-345-barplot.pdf"))
-
-```
-
-### Exploratory reaction time analysis
-We conducted no exploratory reaction time analysis because we deemed the number of correct responses per cell to be too small to calculate reliable averages.
-
-### Exploratory by-item analyses for the SII-effect {.tabset}
-We conducted exploratory by-item analyses. We grouped the data by item_id, probe type, and reason type and calculated false recognition rates by dividing the number of erroneous responses by the number of trials. Then, for each item we calculated the SII-effect as a difference score (implied minus implied-other), with higher values indicating stronger inference effects. We only analyzed items containing a sufficient reason.
-
-In this paradigm error rates are the primary response variable. We expect the error rates to less influenced by word length and currency than response latencies. We therefore calculated the difference score using the implied-other label presented with the same item (same item, different labels). We ran correlation analyses to investigate whether the SII-effect was stronger for items with reasons that were rated to be relatively sufficient. We also analyzed whether the SII-effect could be predicted using the ratings from study 2.
-
-#### Correlation matrix
-```{r by-item sii correlation, message = FALSE}
-item_suff <- d_long %>%
-  select(item_id, reason_type, sufficiency) %>%
-  group_by(item_id, reason_type) %>%
-  summarize(.groups = "drop", sufficiency = mean(sufficiency, na.rm = TRUE))
-item <- d_long %>%
-  select(item_id, behavior, probe_type, reason_type, is_correct) %>%
-  group_by(item_id, behavior, probe_type, reason_type) %>%
-  summarize(.groups = "drop",
-    errors = sum(is_correct == 0),
-    n_trials = n()) %>%
-  mutate(er = errors / n_trials, .keep = "unused") %>%
-  pivot_wider(names_from = probe_type, values_from = er) %>%
-  mutate(sii_effect = implied - `implied other`, .keep = "unused") %>%
-  left_join(item_suff)
-
-c1 <- item %>%
-  filter(reason_type == "sufficient") %>%
-  select(sii_effect, identity, necessity,
-  baserate, sufficiency) %>%
-  cor_table()
-
-knitr::kable(c1, format = "markdown")
-```
-
-#### SII-effect from Study 2
-```{r by-item sii sii-effect, message = FALSE}
-filter(item, reason_type == "sufficient") %>%
-  {
-    ggplot(., aes(x = sii_effect_sii2, y = sii_effect)) +
-    labs(x = "SII effect study 2", y = "SII effect study 3") +
-    geom_smooth(method = "lm", formula = y ~ x, color = "#465263",
-      size = 0.5, fill = "#849AB9") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.2, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263", max.overlaps = 15) +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-sii-sii2.pdf"))
-```
-
-#### Identity
-```{r by-item sii identity, message = FALSE}
-filter(item, reason_type == "sufficient") %>%
-  {
-    ggplot(., aes(x = identity, y = sii_effect)) +
-    labs(x = "Mean identity rating", y = "SII effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-sii-identity.pdf"))
-```
-
-#### Necessity
-```{r by-item sii necessity, message = FALSE}
-filter(item, reason_type == "sufficient") %>%
-  {
-    ggplot(., aes(x = necessity, y = sii_effect)) +
-    labs(x = "Mean necessity rating", y = "SII effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-sii-necessity.pdf"))
-```
-
-#### Baserate
-```{r by-item sii baserate, message = FALSE}
-filter(item, reason_type == "sufficient") %>%
-  {
-    ggplot(., aes(x = baserate, y = sii_effect)) +
-    labs(x = "Mean baserate rating", y = "SII effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-sii-baserate.pdf"))
-```
-
-#### Sufficiency
-```{r by-item sii sufficiency, message = FALSE}
-filter(item, reason_type == "sufficient") %>%
-  {
-    ggplot(., aes(x = sufficiency, y = sii_effect)) +
-    labs(x = "Mean sufficiency rating", y = "SII effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-sii-sufficiency.pdf"))
-```
-
-### Exploratory by-item analyses for the discounting effect {.tabset}
-We conducted another set of exploratory by-item analyses with the discounting effect rather than the SII-effect as the dependent variable. For each item we calculated the discounting effect as a difference score (SII-effect for the sufficient reasons minus SII-effect for control reasons), with negative values indicating stronger discounting effects. For the sufficiency ratings we also calculated a difference score (sufficiency rating of the sufficient reasons minus sufficiency score of the control reasons).
-
-We ran correlation analyses to investigate whether the SII-effect was stronger for items with reasons that were rated to be relatively sufficient. We also analyzed whether the SII-effect could be predicted using the ratings from study 2.
-
-#### Correlation matrix
-```{r by-item discounting correlation, message = FALSE}
-item_disc <- item %>%
-  pivot_wider(
-    names_from = reason_type,
-    values_from = c(sii_effect, sii_effect_sii2,
-      sufficiency, sufficiency_sii2)) %>%
-  mutate(.keep = "unused",
-    sufficiency = sufficiency_sufficient - sufficiency_control,
-    sufficiency_sii2 = sufficiency_sii2_sufficient - sufficiency_sii2_control,
-    discounting = sii_effect_sufficient - sii_effect_control,
-    discounting_sii2 = sii_effect_sii2_sufficient - sii_effect_sii2_control)
-
-c2 <- item_disc %>%
-  select(discounting, discounting_sii2, identity, necessity,
-  baserate, sufficiency, sufficiency_sii2) %>%
-  cor_table()
-
-knitr::kable(c2, format = "markdown")
-```
-
-The discounting effect was not significantly correlated with any of the ratings. Discounting effects from study 1 and 2 were not correlated.
-
-#### Discounting-effect from Study 2
-```{r by-item discounting sii-effect, message = FALSE}
-item_disc %>%
-  {
-    ggplot(., aes(x = discounting_sii2, y = discounting)) +
-    labs(x = "Discounting effect study 2", y = "Discounting effect study 3") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.2, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263", max.overlaps = 15) +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-discounting-sii2.pdf"))
-```
-
-#### Identity
-```{r by-item discounting identity, message = FALSE}
-item_disc %>%
-  {
-    ggplot(., aes(x = identity, y = discounting)) +
-    labs(x = "Mean identity rating", y = "Discounting effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-discounting-identity.pdf"))
-```
-
-#### Necessity
-```{r by-item discounting necessity, message = FALSE}
-item_disc %>%
-  {
-    ggplot(., aes(x = necessity, y = discounting)) +
-    labs(x = "Mean necessity rating", y = "Discounting effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-discounting-necessity.pdf"))
-```
-
-#### Baserate
-```{r by-item discounting baserate, message = FALSE}
-item_disc %>%
-  {
-    ggplot(., aes(x = baserate, y = discounting)) +
-    labs(x = "Mean baserate rating", y = "Discounting effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-discounting-baserate.pdf"))
-```
-
-#### Sufficiency
-```{r by-item discounting sufficiency, message = FALSE}
-item_disc %>%
-  {
-    ggplot(., aes(x = sufficiency, y = discounting)) +
-    labs(x = "Mean sufficiency rating", y = "Discounting effect") +
-    geom_abline(intercept = 0, slope = 0, color = "#465263") +
-    geom_point(color = "#465263") +
-    geom_label_repel(size = 4.3, label = .$label, box.padding = 0.2,
-      family = "Nunito", color = "#465263") +
-    theme_cs_talk()
-  } %T>%
-  ggexport(width = 7, height = 6,
-       filename = here::here("Analysis/by-item-discounting-sufficiency.pdf"))
 ```
 
 ### Exploratory multilevel analysis {.tabset}
@@ -843,8 +550,7 @@ sjPlot::tab_model(mlm2)
 
 #### Visualization sufficiency
 ```{r multilevel visualization sufficiency, message = FALSE, warning = FALSE, fig.width = 14}
-d_mlm %>%
-  {
+mlm_sufficiency <- d_mlm %>%
   ggplot(., aes(x = sufficiency, y = is_error)) +
   facet_grid(~ probe_type, labeller = "label_value") +
   labs(
@@ -860,7 +566,20 @@ d_mlm %>%
     slab_type = "pdf", scale = 0.25, size = 0.5) +
   scale_color_viridis_d(option = "mako", begin = 0.4, end = 0.85) +
   theme_cs_talk()
-  } %T>%
-  ggexport(width = 8, height = 5,
-    filename = here::here("Analysis/mlm-sufficiency.pdf"))
+mlm_sufficiency
+```
+
+```{r save plots, message = FALSE, eval = FALSE}
+ggexport(check_plot, width = 6, height = 5,
+  filename = here::here("Analysis/check.pdf"))
+ggexport(er_outlier, width = 7, height = 5,
+  filename = here("Analysis/er-outlier.pdf"))
+ggexport(er_qq, width = 7, height = 7,
+  filename = here("Analysis/er-qq.pdf"))
+ggexport(er_lineplot, width = 8, height = 5,
+  filename = here::here("Analysis/er-lineplot.pdf"))
+ggexport(mlm_sufficiency, width = 8, height = 5,
+  filename = here::here("Analysis/mlm-sufficiency.pdf"))
+ggexport(p, width = 13, height = 5,
+  filename = here::here("Analysis/exp-345-barplot.pdf"))
 ```
