@@ -6,12 +6,12 @@
 ##  and required sample sizes for a
 ##  sequential analysis
 ##
-## Author: [redacted]
+## Author: Carsten W. Sander
 ##
 ## Date Created: 2022-07-13
 ##
-## Copyright (c) [redacted], 2022
-## Email: [redacted]
+## Copyright (c) Carsten W. Sander, 2022
+## Email: carsten.sander@uni-hamburg.de
 ## ---------------------------
 ## Notes:
 ##  rpact Version -- rpact_3.3.0
